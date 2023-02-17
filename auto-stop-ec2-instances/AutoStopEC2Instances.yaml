@@ -13,12 +13,14 @@ Metadata:
       LambdaDeployVPC: 
         default: "The VPC where the Lambdas will be deployed"
       LambdaDeploySubnet:
-        default: " MUST be private subnets with a NAT Gateway attached, or the Interface Endpoints that grants access at least to EventBridge (com.amazonaws.eu-south-1.events) and CloudWatch (com.amazonaws.eu-south-1.logs)"
+        default: "MUST be private subnets with a NAT Gateway attached, or the Interface Endpoints that grants access at least to EventBridge (com.amazonaws.YOUR_REGION.events) and CloudWatch (com.amazonaws.YOUR_REGION.logs)"
 Parameters: 
     LambdaDeployVPC: 
         Type: AWS::EC2::VPC::Id
+        AllowedPattern : ".+"
     LambdaDeploySubnet: 
         Type: List<AWS::EC2::Subnet::Id>
+        AllowedPattern : ".+"
     
 Resources:
 
