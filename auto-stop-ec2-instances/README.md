@@ -4,7 +4,7 @@ EC2 instances are Virtual Machines in AWS Cloud, that acts as remote servers.
 
 They could also be used as a simple development environment, and in this case they doesn't need to run all time.
 
-Typically, in these cases companies plans a start / stop schedule of the instances, using EventBridge and Lambda functions in a manner that is also officially documented by AWS: https://aws.amazon.com/it/premiumsupport/knowledge-center/start-stop-lambda-eventbridge/
+Typically, in these cases companies plans a start / stop schedule of the instances, using EventBridge and Lambda functions in a manner that is also officially documented by [AWS](https://aws.amazon.com/it/premiumsupport/knowledge-center/start-stop-lambda-eventbridge/)
 
 But what should we do if we want to start the instances from the EC2 console whenever we want, making sure that they are turned off after a certain period of time?
 
@@ -16,4 +16,4 @@ This CloudFormation template provides a complete solution to automatically turn 
 
 The default window is of 4 hour, you can change it by modifying the SSM Parameter named "AutoStopWindow", that is also created with the template.
 
-More info here: https://filippotestini.medium.com/how-to-automate-stopping-of-an-ec2-instance-af8501968059
+More info [here](https://filippotestini.medium.com/how-to-automate-stopping-of-an-ec2-instance-af8501968059)
