@@ -1,4 +1,4 @@
-# Automatically turn off your EC2 instances
+# EC2 Instances Auto Stop
 
 EC2 instances are Virtual Machines in AWS Cloud, that acts as remote servers.
 
