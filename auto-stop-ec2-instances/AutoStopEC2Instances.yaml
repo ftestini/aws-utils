@@ -1,0 +1,327 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Template for an auto stop EC2 instances engine, based on Lambda and EventBridge"
+Metadata: 
+  AWS::CloudFormation::Interface: 
+    ParameterGroups: 
+      - 
+        Label: 
+          default: "Network Configuration"
+        Parameters: 
+          - LambdaDeployVPC
+          - LambdaDeploySubnet
+    ParameterLabels: 
+      LambdaDeployVPC: 
+        default: "The VPC where the Lambdas will be deployed"
+      LambdaDeploySubnet:
+        default: " MUST be private subnets with a NAT Gateway attached, or the Interface Endpoints that grants access at least to EventBridge (com.amazonaws.eu-south-1.events) and CloudWatch (com.amazonaws.eu-south-1.logs)"
+Parameters: 
+    LambdaDeployVPC: 
+        Type: AWS::EC2::VPC::Id
+    LambdaDeploySubnet: 
+        Type: List<AWS::EC2::Subnet::Id>
+    
+Resources:
+
+    AutoStopWindowSSMParameter:
+        Type: "AWS::SSM::Parameter"
+        Properties:
+            Name: "AutoStopWindow"
+            Type: "String"
+            Value: "4"
+            DataType: "text"
+            Tier: "Standard"
+
+    LambdaSecurityGroup:
+        Type: "AWS::EC2::SecurityGroup"
+        Properties:
+            GroupDescription: "SG for Lambda Functions in this stack"
+            GroupName: "Lambda-Auto-Stop-EC2-SG"
+            VpcId: !Ref LambdaDeployVPC
+            SecurityGroupIngress: 
+                - 
+                    CidrIp: "0.0.0.0/0"
+                    IpProtocol: "-1"
+            SecurityGroupEgress: 
+                - 
+                    CidrIp: "0.0.0.0/0"
+                    IpProtocol: "-1"
+
+    # Lambda + EventBridge Rule to schedule ttop EC2 instances on start
+    LambdaScheduleStopEC2InstanceRole:
+        Type: "AWS::IAM::Role"
+        Properties:
+            Path: "/"
+            RoleName: "LambdaScheduleStopEC2InstanceRole"
+            AssumeRolePolicyDocument:
+                Version: '2012-10-17'
+                Statement:
+                    - Effect: Allow
+                      Principal: 
+                        Service: lambda.amazonaws.com
+                      Action: sts:AssumeRole
+            MaxSessionDuration: 3600
+            Description: "Allows Lambda functions to call AWS services on your behalf."
+
+    LambdaScheduleStopEC2InstancePolicy:
+        Type: "AWS::IAM::Policy"
+        DependsOn: LambdaScheduleStopEC2InstanceRole
+        Properties:
+            PolicyDocument:
+                Version: '2012-10-17'
+                Statement:
+                    - Effect: Allow
+                      Action:
+                        - ec2:DescribeTags
+                        - ec2:CreateNetworkInterface
+                        - ec2:DeleteNetworkInterface
+                        - ec2:DescribeNetworkInterfaces
+                        - events:PutRule
+                        - events:PutTargets
+                      Resource: "*"
+                    - Effect: Allow
+                      Action: ssm:GetParameter
+                      Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/AutoStopWindow'
+                    - Effect: Allow
+                      Action: logs:CreateLogGroup
+                      Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*'
+                    - Effect: Allow
+                      Action:
+                        - logs:CreateLogStream
+                        - logs:PutLogEvents
+                      Resource:
+                        - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/schedule-stop-ec2-instance-on-start:*'
+            Roles: 
+              - !Ref LambdaScheduleStopEC2InstanceRole
+            PolicyName: "LambdaScheduleStopEC2InstancePolicy"
+
+    LambdaScheduleStopEC2Instance:
+        Type: "AWS::Lambda::Function"
+        DependsOn: LambdaScheduleStopEC2InstancePolicy
+        Properties:
+            Description: ""
+            FunctionName: "schedule-stop-ec2-instance-on-start"
+            Handler: "lambda_function.lambda_handler"
+            Architectures: 
+              - "x86_64"
+            Code: 
+                S3Bucket: "filippo-testini-aws-utils"
+                S3Key: "auto-stop-ec2-instances/schedule-stop-ec2-instance-on-start.zip"
+            MemorySize: 128
+            Role: !GetAtt LambdaScheduleStopEC2InstanceRole.Arn
+            Runtime: "python3.9"
+            Timeout: 3
+            TracingConfig: 
+                Mode: "PassThrough"
+            VpcConfig: 
+                SubnetIds: !Split [',', !Join [',', !Ref LambdaDeploySubnet]]
+                SecurityGroupIds: 
+                    - !Ref LambdaSecurityGroup
+            EphemeralStorage: 
+                Size: 512
+
+    LambdaScheduleStopEC2InvokePermission:
+        Type: "AWS::Lambda::Permission"
+        DependsOn: LambdaScheduleStopEC2Instance
+        Properties:
+            Action: "lambda:InvokeFunction"
+            FunctionName: !GetAtt LambdaScheduleStopEC2Instance.Arn
+            Principal: "events.amazonaws.com"
+            SourceArn: !Sub "arn:aws:events:${AWS::Region}:${AWS::AccountId}:rule/*"
+
+    ScheduleStopEC2InstanceOnStartEventRule:
+        Type: "AWS::Events::Rule"
+        DependsOn: LambdaScheduleStopEC2Instance
+        Properties:
+            Name: "ec2-instances-started"
+            EventPattern:
+                source:
+                    - aws.ec2
+                detail-type:
+                    - EC2 Instance State-change Notification
+                detail: 
+                  state:
+                      - running
+            State: "ENABLED"
+            Targets: 
+              - 
+                Arn: !GetAtt LambdaScheduleStopEC2Instance.Arn
+                Id: "Id-ec2-instance-started-for-auto-stop-event"
+            EventBusName: "default"
+
+    # Lambda + EventBridge Rule to remove scheduled stop on manual stop
+    LambdaRemoveScheduledStopEC2InstanceRole:
+        Type: "AWS::IAM::Role"
+        Properties:
+            Path: "/"
+            RoleName: "LambdaRemoveScheduledStopEC2InstanceRole"
+            AssumeRolePolicyDocument:
+                Version: '2012-10-17'
+                Statement:
+                    - Effect: Allow
+                      Principal: 
+                        Service: lambda.amazonaws.com
+                      Action: sts:AssumeRole
+            MaxSessionDuration: 3600
+            Description: "Allows Lambda functions to call AWS services on your behalf."
+
+    LambdaRemoveScheduledStopEC2InstancePolicy:
+        Type: "AWS::IAM::Policy"
+        DependsOn: LambdaRemoveScheduledStopEC2InstanceRole
+        Properties:
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeTags
+                  - ec2:CreateNetworkInterface
+                  - ec2:DeleteNetworkInterface
+                  - ec2:DescribeNetworkInterfaces
+                  - events:ListTargetsByRule
+                  - events:RemoveTargets
+                  - events:DeleteRule
+                Resource: "*"
+              - Effect: Allow
+                Action: logs:CreateLogGroup
+                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*'
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/remove-scheduled-stop-instance:*'
+            Roles: 
+              - !Ref LambdaRemoveScheduledStopEC2InstanceRole
+            PolicyName: "LambdaRemoveScheduledStopEC2InstancePolicy"
+
+    LambdaRemoveScheduledStopEC2Instance:
+        Type: "AWS::Lambda::Function"
+        DependsOn: LambdaRemoveScheduledStopEC2InstancePolicy
+        Properties:
+            Description: ""
+            FunctionName: "remove-scheduled-stop-instance"
+            Handler: "lambda_function.lambda_handler"
+            Architectures: 
+              - "x86_64"
+            Code: 
+                S3Bucket: "filippo-testini-aws-utils"
+                S3Key: "auto-stop-ec2-instances/remove-scheduled-stop-instance.zip"
+            MemorySize: 128
+            Role: !GetAtt LambdaRemoveScheduledStopEC2InstanceRole.Arn
+            Runtime: "python3.9"
+            Timeout: 3
+            TracingConfig: 
+                Mode: "PassThrough"
+            VpcConfig: 
+                SubnetIds: !Split [',', !Join [',', !Ref LambdaDeploySubnet]]
+                SecurityGroupIds: 
+                    - !Ref LambdaSecurityGroup
+            EphemeralStorage: 
+                Size: 512
+
+    LambdaRemoveScheduledStopEC2InvokePermission:
+        Type: "AWS::Lambda::Permission"
+        DependsOn: LambdaRemoveScheduledStopEC2Instance
+        Properties:
+            Action: "lambda:InvokeFunction"
+            FunctionName: !GetAtt LambdaRemoveScheduledStopEC2Instance.Arn
+            Principal: "events.amazonaws.com"
+            SourceArn: !Sub "arn:aws:events:${AWS::Region}:${AWS::AccountId}:rule/*"
+
+    RemoveScheduledStopEC2EventRule:
+        Type: "AWS::Events::Rule"
+        DependsOn: LambdaRemoveScheduledStopEC2Instance
+        Properties:
+            Name: "ec2-instances-stopped"
+            EventPattern:
+                source:
+                  - aws.ec2
+                detail-type:
+                  - EC2 Instance State-change Notification
+                detail:
+                  state:
+                    - stopped
+            State: "ENABLED"
+            Targets: 
+              - 
+                Arn: !GetAtt LambdaRemoveScheduledStopEC2Instance.Arn
+                Id: "Id-ec2-instance-stopped-for-auto-stop-event"
+            EventBusName: "default"
+
+    # Lambda stop EC2 function
+
+    LambdaStopEC2InstanceRole:
+        Type: "AWS::IAM::Role"
+        Properties:
+            Path: "/"
+            RoleName: "LambdaStopEC2InstanceRole"
+            AssumeRolePolicyDocument:
+                Version: '2012-10-17'
+                Statement:
+                    - Effect: Allow
+                      Principal: 
+                        Service: lambda.amazonaws.com
+                      Action: sts:AssumeRole
+            MaxSessionDuration: 3600
+            Description: "Allows Lambda functions to call AWS services on your behalf."
+
+    LambdaStopEC2InstancePolicy:
+        Type: "AWS::IAM::Policy"
+        DependsOn: LambdaStopEC2InstanceRole
+        Properties:
+            PolicyDocument:
+                Version: '2012-10-17'
+                Statement:
+                - Effect: Allow
+                  Action:
+                    - ec2:CreateNetworkInterface
+                    - ec2:DeleteNetworkInterface
+                    - ec2:DescribeNetworkInterfaces
+                    - ec2:StopInstances
+                  Resource: "*"
+                - Effect: Allow
+                  Action: logs:CreateLogGroup
+                  Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*'
+                - Effect: Allow
+                  Action:
+                    - logs:CreateLogStream
+                    - logs:PutLogEvents
+                  Resource:
+                    - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/stop-ec2-instance:*'
+            Roles: 
+              - !Ref LambdaStopEC2InstanceRole
+            PolicyName: "LambdaStopEC2InstancePolicy"
+
+    LambdaStopEC2InstanceFunction:
+        Type: "AWS::Lambda::Function"
+        DependsOn: LambdaStopEC2InstancePolicy
+        Properties:
+            Description: ""
+            FunctionName: "stop-ec2-instance"
+            Handler: "lambda_function.lambda_handler"
+            Architectures: 
+              - "x86_64"
+            Code: 
+                S3Bucket: "filippo-testini-aws-utils"
+                S3Key: "auto-stop-ec2-instances/stop-ec2-instance.zip"
+            MemorySize: 128
+            Role: !GetAtt LambdaStopEC2InstanceRole.Arn
+            Runtime: "python3.9"
+            Timeout: 3
+            TracingConfig: 
+                Mode: "PassThrough"
+            VpcConfig: 
+                SubnetIds: !Split [',', !Join [',', !Ref LambdaDeploySubnet]]
+                SecurityGroupIds: 
+                    - !Ref LambdaSecurityGroup
+            EphemeralStorage: 
+                Size: 512
+
+    LambdaStopEC2InstancePermission:
+        Type: "AWS::Lambda::Permission"
+        DependsOn: LambdaStopEC2InstanceFunction
+        Properties:
+            Action: "lambda:InvokeFunction"
+            FunctionName: !GetAtt LambdaStopEC2InstanceFunction.Arn
+            Principal: "events.amazonaws.com"
+            SourceArn: !Sub "arn:aws:events:${AWS::Region}:${AWS::AccountId}:rule/*"
