@@ -6,7 +6,7 @@ They could also be used as a simple development environment, and in this case th
 
 Typically, in these cases users plans a start / stop schedule of the instances, using EventBridge and Lambda functions in a manner that is also officially documented by [AWS](https://aws.amazon.com/it/premiumsupport/knowledge-center/start-stop-lambda-eventbridge/)
 
-But what should we do if we want to start the instances from the EC2 console whenever we want, making sure that they are turned off after a certain period of time?
+But what should we do if we want to start the EC2 instances whenever we want, making sure that they are turned off after a certain period of time?
 
 We can also use EventBridge and Lambda, but the implementation is a little trickier.
 
