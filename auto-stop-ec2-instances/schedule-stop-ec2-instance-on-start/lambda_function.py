@@ -51,13 +51,14 @@ def lambda_handler(event, context):
         
         # Associate the target passing a constant input
         aws_account_id = context.invoked_function_arn.split(":")[4]
+        aws_region = os.environ['AWS_REGION']
         target = event_bridge_client.put_targets(
                 Rule='auto-stop-' + instance_id,
                 EventBusName='default',
                 Targets=[
                     {
                         "Id": "Lambda",
-                        "Arn": "arn:aws:lambda:eu-south-1:%s:function:stop-ec2-instance" % aws_account_id,
+                        "Arn": "arn:aws:lambda:%s:%s:function:stop-ec2-instance" % (aws_region, aws_account_id),
                         "Input": '{"instance_id": "%s"}' % instance_id
                     }
                 ]
