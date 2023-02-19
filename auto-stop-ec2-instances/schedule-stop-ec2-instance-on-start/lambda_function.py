@@ -51,10 +51,6 @@ def lambda_handler(event, context):
         
         # Associate the target passing a constant input
         aws_account_id = context.invoked_function_arn.split(":")[4]
-        hibernation_enabled_parameter = ssm.get_parameter(Name='AutoStopHibernate', WithDecryption=True)
-        hibernation_enabled = hibernation_enabled_parameter['Parameter']['Value']
-        print('Hibernate: %s' % str(hibernation_enabled))
-
         target = event_bridge_client.put_targets(
                 Rule='auto-stop-' + instance_id,
                 EventBusName='default',
@@ -62,7 +58,7 @@ def lambda_handler(event, context):
                     {
                         "Id": "Lambda",
                         "Arn": "arn:aws:lambda:eu-south-1:%s:function:stop-ec2-instance" % aws_account_id,
-                        "Input": '{"instance_id": "%s", "hibernate": "%s"}' % (instance_id, hibernation_enabled)
+                        "Input": '{"instance_id": "%s"}' % instance_id
                     }
                 ]
             )
