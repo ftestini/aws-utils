@@ -32,6 +32,15 @@ Resources:
             Value: "4"
             DataType: "text"
             Tier: "Standard"
+    
+    AutoStopHibernateSSMParameter:
+        Type: "AWS::SSM::Parameter"
+        Properties:
+            Name: "AutoStopHibernate"
+            Type: "String"
+            Value: "False"
+            DataType: "text"
+            Tier: "Standard"
 
     LambdaSecurityGroup:
         Type: "AWS::EC2::SecurityGroup"
@@ -251,7 +260,6 @@ Resources:
             EventBusName: "default"
 
     # Lambda stop EC2 function
-
     LambdaStopEC2InstanceRole:
         Type: "AWS::IAM::Role"
         Properties:
@@ -280,6 +288,8 @@ Resources:
                     - ec2:DeleteNetworkInterface
                     - ec2:DescribeNetworkInterfaces
                     - ec2:StopInstances
+                    - ec2:HibernateInstances
+                    - ec2:DescribeInstanceStatus
                   Resource: "*"
                 - Effect: Allow
                   Action: logs:CreateLogGroup

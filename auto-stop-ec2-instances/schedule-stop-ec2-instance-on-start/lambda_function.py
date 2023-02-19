@@ -25,10 +25,12 @@ def lambda_handler(event, context):
     # Search the "auto-stop" tag
     tags = response['Tags']
     behaviour_found = any(tag['Key'] == 'behaviour' and tag['Value'] == 'auto-stop' for tag in tags)
-    auto_stop_window_parameter = ssm.get_parameter(Name='AutoStopWindow', WithDecryption=True)
-    auto_stop_window = int(auto_stop_window_parameter['Parameter']['Value'])
     
     if behaviour_found:
+        auto_stop_window_parameter = ssm.get_parameter(Name='AutoStopWindow', WithDecryption=True)
+        auto_stop_window = int(auto_stop_window_parameter['Parameter']['Value'])
+        print('Auto stop window: %s' % str(auto_stop_window))
+
         # Create the scheduled expression
         schedule_expression = "cron({} {} {} {} ? {})".format(
             (datetime.datetime.now() + datetime.timedelta(hours=auto_stop_window)).minute,
@@ -45,21 +47,27 @@ def lambda_handler(event, context):
             State='ENABLED',
             EventBusName='default'
         )
+        print('Rule created: %s' % str(rule))
         
         # Associate the target passing a constant input
         aws_account_id = context.invoked_function_arn.split(":")[4]
+        hibernation_enabled_parameter = ssm.get_parameter(Name='AutoStopHibernate', WithDecryption=True)
+        hibernation_enabled = hibernation_enabled_parameter['Parameter']['Value']
+        print('Hibernate: %s' % str(hibernation_enabled))
+
         target = event_bridge_client.put_targets(
-            Rule='auto-stop-' + instance_id,
-            EventBusName='default',
-            Targets=[
-                {
-                    "Id": "Lambda",
-                    "Arn": "arn:aws:lambda:eu-south-1:%s:function:stop-ec2-instance" % aws_account_id,
-                    "Input": '{"instance_id": "%s"}' % instance_id
-                }
-            ]
-        )
+                Rule='auto-stop-' + instance_id,
+                EventBusName='default',
+                Targets=[
+                    {
+                        "Id": "Lambda",
+                        "Arn": "arn:aws:lambda:eu-south-1:%s:function:stop-ec2-instance" % aws_account_id,
+                        "Input": '{"instance_id": "%s", "hibernate": "%s"}' % (instance_id, hibernation_enabled)
+                    }
+                ]
+            )
         
+        print('Target created: %s' % str(target))
         print('Rule successfully configured')
     else:
         print('No tag for auto-stop found on current instance')
