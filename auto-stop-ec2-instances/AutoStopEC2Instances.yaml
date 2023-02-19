@@ -84,9 +84,6 @@ Resources:
                       Action: ssm:GetParameter
                       Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/AutoStopWindow'
                     - Effect: Allow
-                      Action: ssm:GetParameter
-                      Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/AutoStopHibernate'
-                    - Effect: Allow
                       Action: logs:CreateLogGroup
                       Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*'
                     - Effect: Allow
