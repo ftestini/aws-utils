@@ -292,7 +292,8 @@ Resources:
                     - ec2:DescribeNetworkInterfaces
                     - ec2:StopInstances
                     - ec2:HibernateInstances
-                    - ec2:DescribeInstanceStatus
+                    - ec2:DescribeInstanceStatus,
+                    - ec2:DescribeInstanceCreditSpecifications
                   Resource: "*"
                 - Effect: Allow
                   Action: logs:CreateLogGroup
